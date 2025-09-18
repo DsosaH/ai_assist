@@ -38,21 +38,39 @@ def main():
         load_dotenv()
         api_key = os.environ.get("GEMINI_API_KEY")
         client = genai.Client(api_key=api_key)
-        response = client.models.generate_content(model="gemini-2.0-flash-001", contents=messages, config=types.GenerateContentConfig(tools=[available_functions], system_instruction=system_prompt))
-        if response.function_calls:
-            for func in response.function_calls:
-                result = call_function(func, is_verbose)
-                if not result.parts[0].function_response.response:
-                    raise Exception("Fatal Exception of some sort.")
-                elif (result.parts[0].function_response.response) and (is_verbose):
-                    print(f"-> {result.parts[0].function_response.response}")
-        else:        
-            print(response.text)
+        counter = 1
+        try:
+            while counter < 20:
+                counter+= 1
+                pending_function_calls = []
+                response = client.models.generate_content(model="gemini-2.0-flash-001", contents=messages, config=types.GenerateContentConfig(tools=[available_functions], system_instruction=system_prompt))
+                
+                for candidate in response.candidates:
+                    messages.append(candidate.content)
+                    for part in candidate.content.parts:
+                        if part.function_call:
+                            pending_function_calls.append(part.function_call)
+                
+                if response.function_calls:
+                    pending_function_calls.extend(response.function_calls)
+                
+                if pending_function_calls:
+                    for func in pending_function_calls:
+                        result = call_function(func, is_verbose)
+                        messages.append(result)
+                    continue
 
-        if is_verbose:
-            print(f"User prompt: {usr_input}")
-            print(f"Prompt tokens: {response.usage_metadata.prompt_token_count}")
-            print(f"Response tokens: {response.usage_metadata.candidates_token_count}")
+                elif response.text:
+                    print(f"Final Response:\n{response.text}")
+                    if is_verbose:
+                        print(f"User prompt: {usr_input}")
+                        print(f"Prompt tokens: {response.usage_metadata.prompt_token_count}")
+                        print(f"Response tokens: {response.usage_metadata.candidates_token_count}")
+                    return
+                
+        except Exception as e:
+            return f"Error: {e}"
+
         
 if __name__ == "__main__":
     main()
